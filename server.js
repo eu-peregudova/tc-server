@@ -1,20 +1,25 @@
 import express from "express";
 import cors from "cors";
 import pkg from "body-parser";
-import { existsSync, writeFileSync, readFileSync } from "fs";
+import {existsSync, writeFileSync, readFileSync} from "fs";
 import OpenAI from "openai";
-import { v4 as uuidv4 } from "uuid";
+import {v4 as uuidv4} from "uuid";
+import bcrypt from 'bcrypt';
 
-import { keys } from "./.env/keys"
+const SALT_ROUNDS = 10;
+import jwt from 'jsonwebtoken';
 
-const { json } = pkg;
+import {keys} from "./env/keys.js"
+
+const {json} = pkg;
 const openai = new OpenAI({
   apiKey: keys.openai,
 });
+const JWT_SECRET = keys.jwtSecret
 
 const app = express();
 const PORT = 3000;
-const DATA_FILE = ".env/users.json";
+const DATA_FILE = "./env/users.json";
 
 const SYSTEM_PROMPT = `
   You are an assistant for me and your job is to pick the most suitable tasks from my list according to my needs. 
@@ -52,32 +57,128 @@ const writeData = (data) => {
   }
 };
 
-// Middleware to extract user ID from headers
+// Middleware to extract token from headers
 const requireAuth = (req, res, next) => {
-  req.userId = req.headers["user-id"];
-  if (!req.userId) {
-    return res.status(400).send("User ID header is missing");
+  const token = req.headers.authorization?.split(' ')[1]; // Bearer <token>
+  if (!token) {
+    return res.status(403).send('A token is required for authentication');
   }
-  next();
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    req.userId = decoded.id;
+    console.log(decoded.id, 'decoded id')
+    next();
+  } catch (err) {
+    console.log('invalid token')
+    return res.status(401).send('Invalid Token');
+  }
 };
 
-app.post("/auth/signin", _);
-
-app.post("/admin/users", (req, res) => {
+app.post("/auth/signup", async (req, res) => {
+  const {email, password, name} = req.body;
   const users = readData();
-  const newUser = { ...req.body, id: uuidv4() };
+  const userExists = users.some(user => user.email === email);
+
+  if (userExists) {
+    return res.status(400).send('User already exists');
+  }
+
+  const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
+  const newUser = {
+    id: uuidv4(),
+    email,
+    password: hashedPassword,
+    name,
+    isMegaUser: false,
+    assistantOn: false,
+    tasks: []
+  };
   users.push(newUser);
   writeData(users);
-  res.status(201).json(newUser);
+  const token = jwt.sign({id: newUser.id}, JWT_SECRET, {expiresIn: '24h'});
+  res.status(201).send({message: 'User created successfully', token});
 });
 
-app.get("/admin/settings", _);
+app.post('/auth/signin', async (req, res) => {
+  const {email, password} = req.body;
+  const users = readData();
+  const user = users.find(user => user.email === email);
+
+  if (!user) {
+    return res.status(404).send('User not found');
+  }
+
+  const match = await bcrypt.compare(password, user.password);
+  if (match) {
+    const token = jwt.sign({id: user.id}, JWT_SECRET, {expiresIn: '24h'});
+    res.json({token});
+  } else {
+    res.status(401).send('Invalid credentials');
+  }
+});
+
+app.get("/auth/validate", requireAuth, (req, res) => {
+  // If the middleware `requireAuth` passes, it means the token is valid.
+  // You can optionally send back user information or simply a success message.
+  const users = readData();
+  const user = users.find((user) => user.id === req.userId);
+  if (user) {
+    const { password, ...userInfo } = user; // Exclude sensitive information like password
+    res.json({ valid: true });
+  } else {
+    // This case should theoretically never be reached if the token is valid,
+    // but it's good practice to handle the possibility.
+    res.status(404).send("User not found");
+  }
+});
+
+app.get("/auth/authorize", requireAuth, (req, res) => {
+  const users = readData();
+  const user = users.find((user) => user.id === req.userId);
+
+  if (user) {
+    res.json({
+      isMegaUser: user.isMegaUser,
+      assistantOn: user.assistantOn,
+      accessRequested: user.accessRequested
+    });
+  } else {
+    res.status(404).send("User not found");
+  }
+});
+
+app.post("/auth/assistant", requireAuth, (req, res) => {
+  const users = readData();
+  const user = users.find((user) => user.id === req.userId);
+
+  if (user) {
+    user.accessRequested = true;
+    writeData(users);
+    res.status(200).send("Access requested");
+  } else {
+    res.status(404).send("User not found");
+  }
+})
+
+// app.post("/admin/users", (req, res) => {
+//   const users = readData();
+//   const newUser = { ...req.body, id: uuidv4() };
+//   users.push(newUser);
+//   writeData(users);
+//   res.status(201).json(newUser);
+// });
+
+// app.get("/admin/settings", _);
 
 app.get("/user/me", requireAuth, (req, res) => {
   const users = readData();
   const user = users.find((user) => user.id === req.userId);
   if (user) {
-    res.json(user);
+    const userSend = {
+      ...user
+    }
+    delete userSend.password
+    res.json(userSend);
   } else {
     res.status(404).send("User not found");
   }
@@ -87,7 +188,7 @@ app.patch("/user/me", requireAuth, (req, res) => {
   const users = readData();
   const index = users.findIndex((u) => u.id === req.userId);
   if (index !== -1) {
-    const updatedUser = { ...users[index], ...req.body };
+    const updatedUser = {...users[index], ...req.body};
     users[index] = updatedUser;
     writeData(users);
     res.json(updatedUser);
@@ -135,7 +236,7 @@ app.get("/tasks", requireAuth, (req, res) => {
 
   // Sort tasks
   const sortCriteria = req.query.sort;
-  
+
   if (sortCriteria === "priorityAsc") {
     tasks.sort((a, b) => {
       const priorityOrder = ["sooner", "later", "maybe never"];
@@ -161,12 +262,10 @@ app.patch("/tasks/:id", requireAuth, (req, res) => {
 
   if (user) {
     const tasks = user.tasks;
-    const taskIndex = tasks.findIndex(
-      (t) => t.taskId.toString() === req.params.id.toString()
-    );
+    const taskIndex = tasks.findIndex((t) => t.taskId.toString() === req.params.id.toString());
     delete req.body.taskId;
     if (taskIndex !== -1) {
-      const updatedTask = { ...tasks[taskIndex], ...req.body };
+      const updatedTask = {...tasks[taskIndex], ...req.body};
       tasks[taskIndex] = updatedTask;
       writeData(users);
       res.json(updatedTask);
@@ -197,11 +296,7 @@ app.post("/tasks", requireAuth, (req, res) => {
   if (user) {
     const tasks = user.tasks;
     const newTask = {
-      taskId: uuidv4(),
-      creationDate: new Date().toISOString(),
-      status: "created",
-      updateDate: "",
-      ...req.body,
+      taskId: uuidv4(), creationDate: new Date().toISOString(), status: "created", updateDate: "", ...req.body,
     };
     tasks.push(newTask);
     writeData(users);
@@ -252,24 +347,30 @@ app.post("/assistant", async (req, res) => {
   const prompt = req.body;
 
   try {
-  //     const response = await openai.chat.completions.create({
-  //       messages: [
-  //         {role: "system", content: SYSTEM_PROMPT + ' Tasks we are working with: ' + JSON.stringify(unresolvedTasks) },
-  //         ...req.body
-  //       ],
-  //       model: "gpt-4o",
-  //     });
-
-  //     const assistantAnswer = response.choices[0].message.content
-
-  //     if (assistantAnswer) {
-  //       res.json(assistantAnswer);
+    //real
+    //   const response = await openai.chat.completions.create({
+    //     messages: [
+    //       {role: "system", content: SYSTEM_PROMPT + ' Tasks we are working with: ' + JSON.stringify(unresolvedTasks) },
+    //       ...req.body
+    //     ],
+    //     model: "gpt-4o",
+    //   });
+    //
+    //   const assistantAnswer = response.choices[0].message.content
+    //
+    //   if (assistantAnswer) {
+    //     res.json(assistantAnswer);
+    //mock
     if (true) {
       setTimeout(() => {
-        res.json(
-          `{"answerText": "here is text of an answer", "pickedTasksArray": ["1", "2", "3"]}`
-        );
+        res.json(`{"answerText": "here is text of an answer", "pickedTasksArray": [
+            "980ca7d7-5b5f-48a9-9afa-4a6d22e4f02f",
+            "126a52ae-1b08-450e-a923-aa1267444e1c",
+            "a042bf1e-5f42-49a5-b3f0-2acbbf8226a0"
+          ]}`);
       }, 2000);
+
+      //real
     } else {
       res.status(404).send("Could not find the task described by ChatGPT");
     }
@@ -279,6 +380,6 @@ app.post("/assistant", async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server is running on http://localhost:${PORT}`);
 });

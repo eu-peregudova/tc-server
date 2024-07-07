@@ -1,0 +1,25 @@
+POST http://localhost:3000/auth/signup
+Content-Type: application/json
+
+{
+  "email": "user@example.com",
+  "password": "securepassword",
+  "name": "John Doe"
+}
+
+###
+GET http://localhost:3000/user/me
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6ImFiYWJiY2I5LTIyNmEtNGVlMS1iY2M1LTJlNTc5NzM1MTYxOCIsImlhdCI6MTcyMDI3MTUxMywiZXhwIjoxNzIwMzU3OTEzfQ.zQU5eVYwZZJpupgjleWv0TDlWp6KgAjbuqDJtp22M-g
+
+###
+POST http://localhost:3000/auth/signin
+Content-Type: application/json
+
+{
+    "email": "mega@user.com",
+    "password": "123qwe"
+}
+
+###
+GET http://localhost:3000/auth/authorize
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjEiLCJpYXQiOjE3MjAzODg0MjAsImV4cCI6MTcyMDQ3NDgyMH0.C1_XE4L4bBMb0HOGV5UJ5uKQTg-ciR3ezD5PZdQ96ZA
