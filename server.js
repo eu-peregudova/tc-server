@@ -66,7 +66,6 @@ const requireAuth = (req, res, next) => {
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
     req.userId = decoded.id;
-    console.log(decoded.id, 'decoded id')
     next();
   } catch (err) {
     console.log('invalid token')
@@ -253,7 +252,12 @@ app.get("/tasks", requireAuth, (req, res) => {
     tasks.sort((a, b) => new Date(a.creationDate) - new Date(b.creationDate));
   }
 
-  res.json(tasks);
+  //pagination
+  const neededPage = +req.query.p
+  const amount = Math.ceil(tasks.length / 9);
+  tasks = tasks.splice(0, neededPage * 9);
+
+  res.json({paginationAmount: amount, tasks: tasks});
 });
 
 app.patch("/tasks/:id", requireAuth, (req, res) => {
