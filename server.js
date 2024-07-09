@@ -88,14 +88,13 @@ app.post("/auth/signup", async (req, res) => {
     email,
     password: hashedPassword,
     name,
-    isMegaUser: false,
-    assistantOn: false,
+    role: 'user',
     tasks: []
   };
   users.push(newUser);
   writeData(users);
   const token = jwt.sign({id: newUser.id}, JWT_SECRET, {expiresIn: '24h'});
-  res.status(201).send({message: 'User created successfully', token});
+  res.status(201).send({message: 'User created successfully', token, role: newUser.role});
 });
 
 app.post('/auth/signin', async (req, res) => {
@@ -110,7 +109,8 @@ app.post('/auth/signin', async (req, res) => {
   const match = await bcrypt.compare(password, user.password);
   if (match) {
     const token = jwt.sign({id: user.id}, JWT_SECRET, {expiresIn: '24h'});
-    res.json({token});
+    delete user.password
+    res.json({token, role: user.role});
   } else {
     res.status(401).send('Invalid credentials');
   }
@@ -123,7 +123,7 @@ app.get("/auth/validate", requireAuth, (req, res) => {
   const user = users.find((user) => user.id === req.userId);
   if (user) {
     const { password, ...userInfo } = user; // Exclude sensitive information like password
-    res.json({ valid: true });
+    res.json({ valid: true, role: user.role });
   } else {
     // This case should theoretically never be reached if the token is valid,
     // but it's good practice to handle the possibility.
@@ -137,9 +137,7 @@ app.get("/auth/authorize", requireAuth, (req, res) => {
 
   if (user) {
     res.json({
-      isMegaUser: user.isMegaUser,
-      assistantOn: user.assistantOn,
-      accessRequested: user.accessRequested
+      role: user.role,
     });
   } else {
     res.status(404).send("User not found");
@@ -151,9 +149,9 @@ app.post("/auth/assistant", requireAuth, (req, res) => {
   const user = users.find((user) => user.id === req.userId);
 
   if (user) {
-    user.accessRequested = true;
+    user.role = 'requested';
     writeData(users);
-    res.status(200).send("Access requested");
+    res.status(200).send({ role: user.role });
   } else {
     res.status(404).send("User not found");
   }
