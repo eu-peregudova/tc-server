@@ -1,15 +1,15 @@
 import express from "express";
 import cors from "cors";
 import pkg from "body-parser";
-import {existsSync, writeFileSync, readFileSync} from "fs";
+import {existsSync, readFileSync, writeFileSync} from "fs";
 import OpenAI from "openai";
 import {v4 as uuidv4} from "uuid";
 import bcrypt from 'bcrypt';
-
-const SALT_ROUNDS = 10;
 import jwt from 'jsonwebtoken';
 
 import {keys} from "./env/keys.js"
+
+const SALT_ROUNDS = 10;
 
 const {json} = pkg;
 const openai = new OpenAI({
@@ -84,12 +84,7 @@ app.post("/auth/signup", async (req, res) => {
 
   const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
   const newUser = {
-    id: uuidv4(),
-    email,
-    password: hashedPassword,
-    name,
-    role: 'user',
-    tasks: []
+    id: uuidv4(), email, password: hashedPassword, name, role: 'user', tasks: []
   };
   users.push(newUser);
   writeData(users);
@@ -122,8 +117,8 @@ app.get("/auth/validate", requireAuth, (req, res) => {
   const users = readData();
   const user = users.find((user) => user.id === req.userId);
   if (user) {
-    const { password, ...userInfo } = user; // Exclude sensitive information like password
-    res.json({ valid: true, role: user.role });
+    const {password, ...userInfo} = user; // Exclude sensitive information like password
+    res.json({valid: true, role: user.role});
   } else {
     // This case should theoretically never be reached if the token is valid,
     // but it's good practice to handle the possibility.
@@ -151,7 +146,7 @@ app.post("/auth/assistant", requireAuth, (req, res) => {
   if (user) {
     user.role = 'requested';
     writeData(users);
-    res.status(200).send({ role: user.role });
+    res.status(200).send({role: user.role});
   } else {
     res.status(404).send("User not found");
   }
@@ -251,9 +246,13 @@ app.get("/tasks", requireAuth, (req, res) => {
   }
 
   //pagination
-  const neededPage = +req.query.p
-  const amount = Math.ceil(tasks.length / 9);
-  tasks = tasks.splice(0, neededPage * 9);
+  let amount = 1;
+
+  if (req.query.p) {
+    const neededPage = +req.query.p;
+    amount = Math.ceil(tasks.length / 9);
+    tasks = tasks.splice(0, neededPage * 9);
+  }
 
   res.json({paginationAmount: amount, tasks: tasks});
 });
@@ -326,8 +325,8 @@ app.get("/tasks/:id", requireAuth, (req, res) => {
   }
 });
 
-app.post("/assistant", async (req, res) => {
-  const userId = req.headers["user-id"];
+app.post("/assistant", requireAuth, async (req, res) => {
+  const userId = req.userId;
   if (!userId) {
     return res.status(400).send("User ID header is missing");
   }
