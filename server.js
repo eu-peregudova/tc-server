@@ -349,27 +349,27 @@ app.post("/assistant", requireAuth, async (req, res) => {
 
   try {
     //real
-    //   const response = await openai.chat.completions.create({
-    //     messages: [
-    //       {role: "system", content: SYSTEM_PROMPT + ' Tasks we are working with: ' + JSON.stringify(unresolvedTasks) },
-    //       ...req.body
-    //     ],
-    //     model: "gpt-4o",
-    //   });
-    //
-    //   const assistantAnswer = response.choices[0].message.content
-    //
-    //   if (assistantAnswer) {
-    //     res.json(assistantAnswer);
+      const response = await openai.chat.completions.create({
+        messages: [
+          {role: "system", content: SYSTEM_PROMPT + ' Tasks we are working with: ' + JSON.stringify(unresolvedTasks) },
+          ...req.body
+        ],
+        model: "gpt-4o",
+      });
+    
+      const assistantAnswer = response.choices[0].message.content
+    
+      if (assistantAnswer) {
+        res.json(assistantAnswer);
     //mock
-    if (true) {
-      setTimeout(() => {
-        res.json(`{"answerText": "here is text of an answer", "pickedTasksArray": [
-            "980ca7d7-5b5f-48a9-9afa-4a6d22e4f02f",
-            "126a52ae-1b08-450e-a923-aa1267444e1c",
-            "a042bf1e-5f42-49a5-b3f0-2acbbf8226a0"
-          ]}`);
-      }, 2000);
+    // if (true) {
+    //   setTimeout(() => {
+    //     res.json(`{"answerText": "here is text of an answer", "pickedTasksArray": [
+    //         "1",
+    //         "2",
+    //         "3"
+    //       ]}`);
+    //   }, 2000);
 
       //real
     } else {
